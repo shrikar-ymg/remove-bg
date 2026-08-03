@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Background Remover</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #101214;
+    --surface: #181b1e;
+    --surface-2: #202428;
+    --surface-3: #292e33;
+    --line: #343a40;
+    --text: #f2f4f3;
+    --muted: #a7b0ae;
+    --primary: #55c59a;
+    --primary-hover: #6ed2aa;
+    --primary-ink: #08291d;
+    --danger: #f37972;
+    --warning: #e3ad5b;
+    --focus: #a9e8cf;
+  }
+
+  * {
+    box-sizing: border-box;
+    letter-spacing: 0;
+  }
+
+  html, body {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button, input, select {
+    font: inherit;
+  }
+
+  button {
+    color: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .appbar {
+    height: 58px;
+    border-bottom: 1px solid var(--line);
+    background: #141719;
+    display: flex;
+    align-items: center;
+  }
+
+  .appbar-inner {
+    width: min(1240px, 100%);
+    margin: 0 auto;
+    padding: 0 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background:
+      linear-gradient(45deg, #d9dedc 25%, transparent 25%) 0 0 / 10px 10px,
+      linear-gradient(45deg, transparent 75%, #d9dedc 75%) 0 0 / 10px 10px,
+      linear-gradient(45deg, transparent 75%, #d9dedc 75%) -5px 5px / 10px 10px,
+      linear-gradient(45deg, #d9dedc 25%, #ffffff 25%) 5px -5px / 10px 10px;
+    border: 1px solid #c4cbc8;
+    box-shadow: inset 0 0 0 7px rgba(85, 197, 154, 0.88);
+    flex: 0 0 auto;
+  }
+
+  .model-status {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .model-status::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 7px;
+    background: var(--primary);
+  }
+
+  main {
+    width: min(1240px, 100%);
+    margin: 0 auto;
+    padding: 22px;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    min-height: calc(100vh - 102px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .stage {
+    min-width: 0;
+    min-height: 560px;
+    padding: 18px;
+    display: flex;
+    position: relative;
+    background: #121517;
+  }
+
+  .panel {
+    border-left: 1px solid var(--line);
+    padding: 20px;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .panel h1,
+  .panel h2 {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.3;
+  }
+
+  .panel-section {
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+  }
+
+  .panel-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .drop {
+    width: 100%;
+    min-height: 100%;
+    border: 1px dashed #596267;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    padding: 28px;
+    cursor: pointer;
+    overflow: hidden;
+    background: #171a1d;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+
+  .drop:hover,
+  .drop.dragging {
+    border-color: var(--primary);
+    background: #1a211e;
+  }
+
+  .drop-prompt {
+    max-width: 360px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .upload-mark {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    border: 1px solid #4a5357;
+    display: grid;
+    place-items: center;
+    color: var(--primary);
+    font-size: 27px;
+    line-height: 1;
+    background: var(--surface-2);
+  }
+
+  .drop-prompt strong {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text);
+    font-size: 16px;
+  }
+
+  .drop-prompt span {
+    font-size: 13px;
+  }
+
+  .selected {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .stage-heading {
+    height: 34px;
+    padding: 0 2px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .stage-heading strong {
+    color: var(--text);
+    max-width: 70%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-area {
+    min-height: 0;
+    flex: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #0d0f10;
+  }
+
+  .preview-area img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 178px);
+    object-fit: contain;
+  }
+
+  .loading {
+    width: 100%;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .loading strong {
+    display: block;
+    color: var(--text);
+  }
+
+  .loading span {
+    display: block;
+    max-width: 340px;
+    margin-top: 7px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 14px;
+    border: 4px solid var(--surface-3);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 800ms linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .editor {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .canvas-shell {
+    min-height: 0;
+    flex: 1;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 6px;
+    position: relative;
+    background-color: #f7f8f7;
+    background-image:
+      linear-gradient(45deg, #d7dcda 25%, transparent 25%),
+      linear-gradient(-45deg, #d7dcda 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #d7dcda 75%),
+      linear-gradient(-45deg, transparent 75%, #d7dcda 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+  }
+
+  #editorCanvas,
+  #selectionCanvas {
+    grid-area: 1 / 1;
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 178px);
+    width: auto;
+    height: auto;
+    touch-action: none;
+  }
+
+  #editorCanvas {
+    z-index: 0;
+    cursor: none;
+  }
+
+  #selectionCanvas {
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .canvas-shell.analyzing #editorCanvas {
+    cursor: wait;
+  }
+
+  .brush-cursor {
+    position: absolute;
+    z-index: 2;
+    display: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+  }
+
+  .brush-cursor.remove {
+    border-color: var(--danger);
+  }
+
+  .segmented {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #121517;
+  }
+
+  .segmented button {
+    height: 36px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .segmented button.active[data-mode="restore"] {
+    color: #d7ffed;
+    background: #254a3b;
+  }
+
+  .segmented button.active[data-mode="erase"] {
+    color: #ffe2df;
+    background: #56302f;
+  }
+
+  .segmented.formats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .segmented button.active[data-format] {
+    color: #d7ffed;
+    background: #254a3b;
+  }
+
+  .format-label {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .quality-select {
+    width: 100%;
+    height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0 34px 0 11px;
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .quality-hint {
+    min-height: 36px;
+    margin-top: -5px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .range-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  .range-value {
+    min-width: 44px;
+    color: var(--muted);
+    text-align: right;
+    font-size: 12px;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--primary);
+  }
+
+  .btn {
+    min-height: 42px;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 9px 13px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--primary);
+    color: var(--primary-ink);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+
+  .btn-secondary {
+    border-color: var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--surface-3);
+  }
+
+  .btn-quiet {
+    min-height: 36px;
+    border-color: var(--line);
+    background: transparent;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .history-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .status {
+    min-height: 18px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .status.error {
+    color: var(--danger);
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--line);
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  @media (max-width: 820px) {
+    .model-status {
+      display: none;
+    }
+
+    main {
+      padding: 12px;
+    }
+
+    .workspace {
+      grid-template-columns: 1fr;
+      min-height: auto;
+    }
+
+    .stage {
+      min-height: 56vh;
+      padding: 12px;
+    }
+
+    .panel {
+      border-left: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .preview-area img,
+    #editorCanvas {
+      max-height: 52vh;
+    }
+  }
+</style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Background Remover</span>
+      </div>
+      <div class="model-status">Precision matting ready</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <section class="stage" aria-label="Image workspace">
+        <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose an image">
+          <div id="dropPrompt" class="drop-prompt">
+            <div class="upload-mark" aria-hidden="true">+</div>
+            <strong>Choose an image</strong>
+            <span>or drop it here</span>
+          </div>
+
+          <div id="selected" class="selected hidden">
+            <div class="stage-heading">
+              <strong id="selectedName"></strong>
+              <span>Original</span>
+            </div>
+            <div class="preview-area">
+              <img id="selectedPreview" alt="Selected image">
+            </div>
+          </div>
+        </div>
+
+        <div id="loading" class="loading hidden" aria-live="polite">
+          <div>
+            <div class="spinner" aria-hidden="true"></div>
+            <strong id="loadingTitle">Analyzing foreground</strong>
+            <span id="loadingDetail"></span>
+          </div>
+        </div>
+
+        <div id="editor" class="editor hidden">
+          <div class="stage-heading">
+            <strong id="resultName"></strong>
+            <span>Transparent PNG</span>
+          </div>
+          <div id="canvasShell" class="canvas-shell">
+            <canvas id="editorCanvas"></canvas>
+            <canvas id="selectionCanvas" aria-hidden="true"></canvas>
+            <div id="brushCursor" class="brush-cursor remove" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <input id="fileInput" class="hidden" type="file" accept="image/*">
+      </section>
+
+      <aside class="panel">
+        <div id="startControls" class="panel-section">
+          <h1>Remove background</h1>
+          <label class="format-label" for="qualityMode">Removal quality</label>
+          <select id="qualityMode" class="quality-select">
+            <option value="best" selected>Best - BEN2 precision</option>
+            <option value="birefnet">BiRefNet - detailed alternative</option>
+            <option value="balanced">Balanced - BiRefNet Lite</option>
+            <option value="fast">Fast - ISNet</option>
+          </select>
+          <div id="qualityHint" class="quality-hint"></div>
+          <button id="removeButton" class="btn btn-primary" type="button" disabled>Remove background</button>
+          <div id="startStatus" class="status" aria-live="polite"></div>
+        </div>
+
+        <div id="resultControls" class="panel-section hidden">
+          <h2>Touch up</h2>
+          <div class="segmented" id="toolMode" role="group" aria-label="Brush mode">
+            <button data-mode="restore" type="button">Restore</button>
+            <button class="active" data-mode="erase" type="button">Erase</button>
+          </div>
+
+          <div class="range-row">
+            <label for="brushSize">Brush size</label>
+            <span id="brushValue" class="range-value">48 px</span>
+          </div>
+          <input id="brushSize" type="range" min="8" max="240" step="2" value="48">
+
+          <div class="history-actions">
+            <button id="undoButton" class="btn btn-quiet" type="button" disabled title="Undo last brush stroke">
+              &#8630; Undo
+            </button>
+            <button id="redoButton" class="btn btn-quiet" type="button" disabled title="Redo last undone stroke">
+              &#8631; Redo
+            </button>
+          </div>
+
+          <div class="divider"></div>
+
+          <span class="format-label">Download format</span>
+          <div class="segmented formats" id="downloadFormat" role="group" aria-label="Download format">
+            <button class="active" data-format="png" type="button">PNG</button>
+            <button data-format="webp" type="button">WebP</button>
+            <button data-format="svg" type="button">SVG</button>
+          </div>
+          <button id="downloadButton" class="btn btn-primary" type="button">Download PNG</button>
+          <button id="newButton" class="btn btn-secondary" type="button">Choose another image</button>
+          <div id="resultStatus" class="status" aria-live="polite">Ready</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+<script>
+  const $ = (selector) => document.querySelector(selector);
+
+  const drop = $("#drop");
+  const fileInput = $("#fileInput");
+  const canvas = $("#editorCanvas");
+  const context = canvas.getContext("2d", { willReadFrequently: false });
+  const selectionCanvas = $("#selectionCanvas");
+  const selectionContext = selectionCanvas.getContext("2d");
+  const HISTORY_LIMIT = 15;
+
+  let selectedFile = null;
+  let sourceUrl = null;
+  let resultUrl = null;
+  let mode = "erase";
+  let painting = false;
+  let refining = false;
+  let strokePoints = [];
+  let strokeMode = "erase";
+  let downloadFormat = "png";
+  let undoStack = [];
+  let redoStack = [];
+
+  const qualityCopy = {
+    best: {
+      hint: "Confidence-guided matting for hair, fur, holes, and difficult object edges. Recommended.",
+      title: "Removing background with precision matting",
+      detail: "BEN2 is analyzing uncertain edges and fine foreground detail."
+    },
+    birefnet: {
+      hint: "Alternative full-size model for subjects where BEN2 is too selective. Slowest on CPU.",
+      title: "Removing background with BiRefNet",
+      detail: "The full BiRefNet model is working. On this computer, this can take a few minutes."
+    },
+    balanced: {
+      hint: "Newer BiRefNet architecture with a smaller model. Better speed with good edge quality.",
+      title: "Removing background at balanced quality",
+      detail: "BiRefNet Lite is analyzing the complete image."
+    },
+    fast: {
+      hint: "Fastest option for simple subjects and smooth backgrounds.",
+      title: "Removing background quickly",
+      detail: "ISNet is analyzing the foreground."
+    }
+  };
+
+  function updateQualityCopy() {
+    const copy = qualityCopy[$("#qualityMode").value];
+    $("#qualityHint").textContent = copy.hint;
+    $("#loadingTitle").textContent = copy.title;
+    $("#loadingDetail").textContent = copy.detail;
+  }
+
+  $("#qualityMode").addEventListener("change", updateQualityCopy);
+  updateQualityCopy();
+
+  function setStage(name) {
+    drop.classList.toggle("hidden", name !== "drop");
+    $("#loading").classList.toggle("hidden", name !== "loading");
+    $("#editor").classList.toggle("hidden", name !== "editor");
+  }
+
+  function setError(message) {
+    const status = $("#startStatus");
+    status.textContent = message;
+    status.classList.toggle("error", Boolean(message));
+  }
+
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = url;
+    });
+  }
+
+  function chooseFile(file) {
+    if (!file || !file.type.startsWith("image/")) {
+      setError("Choose a supported image file.");
+      return;
+    }
+
+    selectedFile = file;
+    setError("");
+
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    sourceUrl = URL.createObjectURL(file);
+
+    $("#selectedPreview").src = sourceUrl;
+    $("#selectedName").textContent = file.name;
+    $("#dropPrompt").classList.add("hidden");
+    $("#selected").classList.remove("hidden");
+    $("#removeButton").disabled = false;
+    setStage("drop");
+  }
+
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+  fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
+
+  ["dragenter", "dragover"].forEach((name) => {
+    drop.addEventListener(name, (event) => {
+      event.preventDefault();
+      drop.classList.add("dragging");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((name) => {
+    drop.addEventListener(name, (event) => {
+      event.preventDefault();
+      drop.classList.remove("dragging");
+    });
+  });
+
+  drop.addEventListener("drop", (event) => {
+    chooseFile(event.dataTransfer.files[0]);
+  });
+
+  $("#removeButton").addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    setError("");
+    setStage("loading");
+    $("#removeButton").disabled = true;
+
+    const form = new FormData();
+    form.append("image", selectedFile);
+    form.append("quality", $("#qualityMode").value);
+
+    try {
+      const response = await fetch("/remove", { method: "POST", body: form });
+      if (!response.ok) {
+        let message = "Background removal failed.";
+        try {
+          message = (await response.json()).error || message;
+        } catch (_) {
+          // The server did not return JSON.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      resultUrl = URL.createObjectURL(blob);
+
+      await openEditor(sourceUrl, resultUrl);
+      $("#startControls").classList.add("hidden");
+      $("#resultControls").classList.remove("hidden");
+      setStage("editor");
+    } catch (error) {
+      setStage("drop");
+      setError(error.message);
+    } finally {
+      $("#removeButton").disabled = false;
+    }
+  });
+
+  async function openEditor(originalUrl, cutoutUrl) {
+    const [original, cutout] = await Promise.all([
+      loadImage(originalUrl),
+      loadImage(cutoutUrl)
+    ]);
+
+    canvas.width = cutout.naturalWidth;
+    canvas.height = cutout.naturalHeight;
+    selectionCanvas.width = canvas.width;
+    selectionCanvas.height = canvas.height;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(cutout, 0, 0, canvas.width, canvas.height);
+    selectionContext.clearRect(0, 0, canvas.width, canvas.height);
+
+    $("#resultName").textContent = selectedFile.name;
+    clearHistory();
+    $("#resultStatus").textContent = "Ready";
+  }
+
+  $("#toolMode").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-mode]");
+    if (!button || refining) return;
+
+    mode = button.dataset.mode;
+    [...$("#toolMode").querySelectorAll("button")].forEach((item) => {
+      item.classList.toggle("active", item === button);
+    });
+    $("#brushCursor").classList.toggle("remove", mode === "erase");
+  });
+
+  $("#brushSize").addEventListener("input", () => {
+    $("#brushValue").textContent = `${$("#brushSize").value} px`;
+  });
+
+  function canvasPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / rect.width),
+      y: (event.clientY - rect.top) * (canvas.height / rect.height)
+    };
+  }
+
+  function drawSelectionStroke(from, to) {
+    const size = Number($("#brushSize").value);
+
+    selectionContext.save();
+    selectionContext.lineWidth = size;
+    selectionContext.lineCap = "round";
+    selectionContext.lineJoin = "round";
+    selectionContext.strokeStyle = strokeMode === "restore"
+      ? "rgba(85, 197, 154, 0.58)"
+      : "rgba(243, 121, 114, 0.58)";
+    selectionContext.beginPath();
+    selectionContext.moveTo(from.x, from.y);
+    selectionContext.lineTo(to.x, to.y);
+    selectionContext.stroke();
+    selectionContext.restore();
+  }
+
+  function canvasBlob(type = "image/png", quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Could not prepare the current mask."));
+      }, type, quality);
+    });
+  }
+
+  function setRefining(active) {
+    refining = active;
+    $("#canvasShell").classList.toggle("analyzing", active);
+    [...$("#toolMode").querySelectorAll("button")].forEach((button) => {
+      button.disabled = active;
+    });
+    [...$("#downloadFormat").querySelectorAll("button")].forEach((button) => {
+      button.disabled = active;
+    });
+    $("#brushSize").disabled = active;
+    $("#downloadButton").disabled = active;
+    $("#newButton").disabled = active;
+    if (active) $("#brushCursor").style.display = "none";
+    updateHistoryButtons();
+  }
+
+  function updateHistoryButtons() {
+    $("#undoButton").disabled = refining || undoStack.length === 0;
+    $("#redoButton").disabled = refining || redoStack.length === 0;
+  }
+
+  function clearHistory() {
+    undoStack = [];
+    redoStack = [];
+    updateHistoryButtons();
+  }
+
+  function pushHistory(stack, blob) {
+    stack.push(blob);
+    if (stack.length > HISTORY_LIMIT) stack.shift();
+  }
+
+  async function drawCanvasBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    try {
+      const image = await loadImage(url);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function moveHistory(source, destination, message) {
+    if (refining || source.length === 0) return;
+    setRefining(true);
+    $("#resultStatus").classList.remove("error");
+    $("#resultStatus").textContent = message;
+
+    try {
+      const currentBlob = await canvasBlob();
+      const targetBlob = source[source.length - 1];
+      await drawCanvasBlob(targetBlob);
+      source.pop();
+      pushHistory(destination, currentBlob);
+      $("#resultStatus").textContent = message;
+    } catch (error) {
+      $("#resultStatus").classList.add("error");
+      $("#resultStatus").textContent = error.message;
+    } finally {
+      setRefining(false);
+    }
+  }
+
+  async function analyzeSelection(points, selectedMode) {
+    setRefining(true);
+    $("#resultStatus").classList.remove("error");
+    $("#resultStatus").textContent = "Analyzing selected area";
+
+    try {
+      const currentBlob = await canvasBlob();
+      const form = new FormData();
+      form.append("image", selectedFile);
+      form.append("current", currentBlob, "current.png");
+      form.append("mode", selectedMode);
+      form.append("brush_size", $("#brushSize").value);
+      form.append("points", JSON.stringify(points.map((point) => [point.x, point.y])));
+
+      const response = await fetch("/refine", { method: "POST", body: form });
+      if (!response.ok) {
+        let message = "Could not analyze that selection.";
+        try {
+          message = (await response.json()).error || message;
+        } catch (_) {
+          // The server did not return JSON.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      await drawCanvasBlob(blob);
+
+      pushHistory(undoStack, currentBlob);
+      redoStack = [];
+      updateHistoryButtons();
+      $("#resultStatus").textContent = selectedMode === "restore"
+        ? "Selection restored"
+        : "Selection erased";
+    } catch (error) {
+      $("#resultStatus").classList.add("error");
+      $("#resultStatus").textContent = error.message;
+    } finally {
+      selectionContext.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+      setRefining(false);
+    }
+  }
+
+  function updateBrushCursor(event) {
+    const shellRect = $("#canvasShell").getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    const displaySize = Number($("#brushSize").value) * (canvasRect.width / canvas.width);
+    const cursor = $("#brushCursor");
+    cursor.style.width = `${Math.max(6, displaySize)}px`;
+    cursor.style.height = `${Math.max(6, displaySize)}px`;
+    cursor.style.left = `${event.clientX - shellRect.left}px`;
+    cursor.style.top = `${event.clientY - shellRect.top}px`;
+    cursor.style.display = "block";
+  }
+
+  canvas.addEventListener("pointerenter", updateBrushCursor);
+  canvas.addEventListener("pointermove", (event) => {
+    updateBrushCursor(event);
+    if (!painting) return;
+
+    const point = canvasPoint(event);
+    const previousPoint = strokePoints[strokePoints.length - 1];
+    const distance = Math.hypot(
+      point.x - previousPoint.x,
+      point.y - previousPoint.y
+    );
+    const minimumDistance = Math.max(1, Number($("#brushSize").value) / 10);
+    if (distance < minimumDistance) return;
+    strokePoints.push(point);
+    drawSelectionStroke(previousPoint, point);
+  });
+
+  canvas.addEventListener("pointerleave", () => {
+    if (!painting) $("#brushCursor").style.display = "none";
+  });
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (refining) return;
+    event.preventDefault();
+    painting = true;
+    strokeMode = mode;
+    strokePoints = [canvasPoint(event)];
+    canvas.setPointerCapture(event.pointerId);
+    drawSelectionStroke(strokePoints[0], strokePoints[0]);
+    $("#resultStatus").textContent = "Selection ready";
+  });
+
+  function finishStroke(event) {
+    if (!painting) return;
+    painting = false;
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+    const points = strokePoints;
+    strokePoints = [];
+    analyzeSelection(points, strokeMode);
+  }
+
+  canvas.addEventListener("pointerup", finishStroke);
+  canvas.addEventListener("pointercancel", (event) => {
+    painting = false;
+    strokePoints = [];
+    selectionContext.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+  });
+
+  $("#undoButton").addEventListener("click", async () => {
+    await moveHistory(undoStack, redoStack, "Last stroke undone");
+  });
+
+  $("#redoButton").addEventListener("click", async () => {
+    await moveHistory(redoStack, undoStack, "Last stroke redone");
+  });
+
+  $("#downloadFormat").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-format]");
+    if (!button || refining) return;
+
+    downloadFormat = button.dataset.format;
+    [...$("#downloadFormat").querySelectorAll("button")].forEach((item) => {
+      item.classList.toggle("active", item === button);
+    });
+    $("#downloadButton").textContent = `Download ${downloadFormat.toUpperCase()}`;
+  });
+
+  $("#downloadButton").addEventListener("click", async () => {
+    $("#downloadButton").disabled = true;
+    $("#resultStatus").classList.remove("error");
+    $("#resultStatus").textContent = `Preparing ${downloadFormat.toUpperCase()}`;
+
+    try {
+      const currentBlob = await canvasBlob();
+      const form = new FormData();
+      form.append("current", currentBlob, "current.png");
+      form.append("format", downloadFormat);
+      form.append("filename", selectedFile.name);
+
+      const response = await fetch("/export", { method: "POST", body: form });
+      if (!response.ok) {
+        let message = `Could not create the ${downloadFormat.toUpperCase()}.`;
+        try {
+          message = (await response.json()).error || message;
+        } catch (_) {
+          // The server did not return JSON.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stem = selectedFile.name.replace(/\.[^.]+$/, "") || "image";
+      link.href = url;
+      link.download = `${stem}-no-bg.${downloadFormat}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      $("#resultStatus").textContent =
+        `${downloadFormat.toUpperCase()} downloaded`;
+    } catch (error) {
+      $("#resultStatus").classList.add("error");
+      $("#resultStatus").textContent = error.message;
+    } finally {
+      $("#downloadButton").disabled = false;
+    }
+  });
+
+  $("#newButton").addEventListener("click", () => {
+    $("#resultControls").classList.add("hidden");
+    $("#startControls").classList.remove("hidden");
+    $("#dropPrompt").classList.remove("hidden");
+    $("#selected").classList.add("hidden");
+    $("#removeButton").disabled = true;
+    $("#startStatus").textContent = "";
+    selectedFile = null;
+    fileInput.value = "";
+    clearHistory();
+    setStage("drop");
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) $("#redoButton").click();
+      else $("#undoButton").click();
+    } else if (
+      (event.ctrlKey || event.metaKey)
+      && event.key.toLowerCase() === "y"
+    ) {
+      event.preventDefault();
+      $("#redoButton").click();
+    }
+  });
+</script>
+</body>
+</html>
