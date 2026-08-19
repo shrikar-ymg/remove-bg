@@ -15,6 +15,9 @@ The app intentionally has only two jobs:
 
 Images stay on your computer.
 
+Very large uploads are automatically resized to 12 megapixels before removal.
+This prevents memory failures while retaining a high-resolution PNG result.
+
 ## Run
 
 Double-click `start.bat`, or run:
@@ -51,6 +54,18 @@ vector shapes.
 
 The smart brush changes transparency only. Restored RGB pixels come from the
 original upload; the app does not sharpen, recolor, or upscale them.
+
+## Improve Fast - ISNet
+
+After correcting a Fast - ISNet result, select **Save final correction locally**.
+The app saves the normalized original image, your approved alpha mask, and
+metadata in `feedback_data/`. This folder stays on your computer and is ignored
+by Git.
+
+Saving examples builds a reliable training set; it does not automatically
+retrain ISNet after each image. Once enough varied, corrected examples have
+been collected, use them to tune a Fast-mode correction model without teaching
+the app from its own mistakes.
 
 ## Files
 

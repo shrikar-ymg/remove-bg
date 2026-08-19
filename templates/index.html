@@ -640,6 +640,16 @@
             </button>
           </div>
 
+          <div id="feedbackControls" class="panel-section hidden">
+            <span class="panel-label">Improve Fast - ISNet</span>
+            <button id="saveFeedbackButton" class="btn btn-secondary" type="button">
+              Save final correction locally
+            </button>
+            <div class="quality-hint">
+              Save only results you approve. They stay on this computer and form a training set for future Fast-mode tuning.
+            </div>
+          </div>
+
           <div class="divider"></div>
 
           <span class="format-label">Download format</span>
@@ -678,6 +688,8 @@
   let downloadFormat = "png";
   let undoStack = [];
   let redoStack = [];
+  let resultQuality = null;
+  let feedbackSaved = false;
 
   const qualityCopy = {
     best: {
@@ -722,6 +734,15 @@
     const status = $("#startStatus");
     status.textContent = message;
     status.classList.toggle("error", Boolean(message));
+  }
+
+  function updateFeedbackControl() {
+    const available = resultQuality === "fast";
+    $("#feedbackControls").classList.toggle("hidden", !available);
+    $("#saveFeedbackButton").disabled = !available || refining || feedbackSaved;
+    $("#saveFeedbackButton").textContent = feedbackSaved
+      ? "Saved for Fast learning"
+      : "Save final correction locally";
   }
 
   function loadImage(url) {
@@ -786,10 +807,11 @@
     setError("");
     setStage("loading");
     $("#removeButton").disabled = true;
+    const selectedQuality = $("#qualityMode").value;
 
     const form = new FormData();
     form.append("image", selectedFile);
-    form.append("quality", $("#qualityMode").value);
+    form.append("quality", selectedQuality);
 
     try {
       const response = await fetch("/remove", { method: "POST", body: form });
@@ -808,6 +830,9 @@
       resultUrl = URL.createObjectURL(blob);
 
       await openEditor(sourceUrl, resultUrl);
+      resultQuality = selectedQuality;
+      feedbackSaved = false;
+      updateFeedbackControl();
       $("#startControls").classList.add("hidden");
       $("#resultControls").classList.remove("hidden");
       setStage("editor");
@@ -900,6 +925,7 @@
     $("#brushSize").disabled = active;
     $("#downloadButton").disabled = active;
     $("#newButton").disabled = active;
+    updateFeedbackControl();
     if (active) $("#brushCursor").style.display = "none";
     updateHistoryButtons();
   }
@@ -943,6 +969,8 @@
       await drawCanvasBlob(targetBlob);
       source.pop();
       pushHistory(destination, currentBlob);
+      feedbackSaved = false;
+      updateFeedbackControl();
       $("#resultStatus").textContent = message;
     } catch (error) {
       $("#resultStatus").classList.add("error");
@@ -982,6 +1010,8 @@
 
       pushHistory(undoStack, currentBlob);
       redoStack = [];
+      feedbackSaved = false;
+      updateFeedbackControl();
       updateHistoryButtons();
       $("#resultStatus").textContent = selectedMode === "restore"
         ? "Selection restored"
@@ -1068,6 +1098,43 @@
     await moveHistory(redoStack, undoStack, "Last stroke redone");
   });
 
+  $("#saveFeedbackButton").addEventListener("click", async () => {
+    if (!selectedFile || resultQuality !== "fast" || refining) return;
+
+    $("#saveFeedbackButton").disabled = true;
+    $("#resultStatus").classList.remove("error");
+    $("#resultStatus").textContent = "Saving local Fast learning example";
+
+    try {
+      const currentBlob = await canvasBlob();
+      const form = new FormData();
+      form.append("image", selectedFile);
+      form.append("current", currentBlob, "final-correction.png");
+      form.append("quality", resultQuality);
+
+      const response = await fetch("/feedback", { method: "POST", body: form });
+      if (!response.ok) {
+        let message = "Could not save the local learning example.";
+        try {
+          message = (await response.json()).error || message;
+        } catch (_) {
+          // The server did not return JSON.
+        }
+        throw new Error(message);
+      }
+
+      const result = await response.json();
+      feedbackSaved = true;
+      updateFeedbackControl();
+      $("#resultStatus").textContent =
+        `Saved locally. ${result.examples} Fast learning example${result.examples === 1 ? "" : "s"}.`;
+    } catch (error) {
+      $("#resultStatus").classList.add("error");
+      $("#resultStatus").textContent = error.message;
+      updateFeedbackControl();
+    }
+  });
+
   $("#downloadFormat").addEventListener("click", (event) => {
     const button = event.target.closest("button[data-format]");
     if (!button || refining) return;
@@ -1129,6 +1196,9 @@
     $("#removeButton").disabled = true;
     $("#startStatus").textContent = "";
     selectedFile = null;
+    resultQuality = null;
+    feedbackSaved = false;
+    updateFeedbackControl();
     fileInput.value = "";
     clearHistory();
     setStage("drop");

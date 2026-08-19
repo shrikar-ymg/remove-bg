@@ -5,6 +5,8 @@ import io
 import json
 import os
 import threading
+import uuid
+from datetime import datetime, timezone
 
 import cv2
 import numpy as np
@@ -57,6 +59,11 @@ PIPELINE_NAME = "BEN2 confidence matting + high-resolution alpha finishing"
 ANALYSIS_MAX_SIDE = 900
 GATE_MAX_SIDE = 600
 MATTING_MAX_SIDE = 1200
+MAX_PROCESSING_PIXELS = 12_000_000
+FEEDBACK_DATA_DIR = os.environ.get(
+    "REMOVE_BG_FEEDBACK_DIR",
+    os.path.join(app.root_path, "feedback_data"),
+)
 BEN2_MODEL_URL = (
     "https://huggingface.co/PramaLLC/BEN2/resolve/main/BEN2_Base.onnx"
 )
@@ -155,6 +162,34 @@ def _empty_mask(size):
     return Image.new("L", size, 0)
 
 
+def limit_processing_size(
+    image: Image.Image,
+    max_pixels: int = MAX_PROCESSING_PIXELS,
+) -> Image.Image:
+    """Keep decoded uploads within a safe memory budget for mask processing."""
+    width, height = image.size
+    pixel_count = width * height
+    if pixel_count <= max_pixels:
+        return image
+
+    scale = (max_pixels / pixel_count) ** 0.5
+    resized_size = (
+        max(1, round(width * scale)),
+        max(1, round(height * scale)),
+    )
+    return image.resize(resized_size, Image.Resampling.LANCZOS)
+
+
+def feedback_example_count() -> int:
+    """Return the number of locally saved Fast-mode training examples."""
+    if not os.path.isdir(FEEDBACK_DATA_DIR):
+        return 0
+    return sum(
+        entry.is_dir()
+        for entry in os.scandir(FEEDBACK_DATA_DIR)
+    )
+
+
 def clean_recovered_elements(
     recovered_mask: Image.Image,
     ai_mask: Image.Image,
@@ -217,6 +252,39 @@ def recovery_is_reliable(mask: Image.Image) -> bool:
     return 0.002 <= recovered_ratio <= 0.85
 
 
+def find_screen_panel_holes(mask: np.ndarray) -> np.ndarray:
+    """Recover missing upper screen panels without filling ordinary gaps."""
+    support = mask >= 12
+    if not support.any():
+        return np.zeros(support.shape, dtype=bool)
+
+    holes = ndimage.binary_fill_holes(support) & ~support
+    labels, component_count = ndimage.label(holes)
+    if not component_count:
+        return holes
+
+    height, width = support.shape
+    minimum_width = max(16, round(width * 0.05))
+    maximum_height = max(10, round(height * 0.12))
+    maximum_bottom = round(height * 0.58)
+    panels = np.zeros_like(holes)
+    for label_id, bounds in enumerate(ndimage.find_objects(labels), start=1):
+        if bounds is None:
+            continue
+        y_slice, x_slice = bounds
+        panel_height = y_slice.stop - y_slice.start
+        panel_width = x_slice.stop - x_slice.start
+        aspect_ratio = panel_width / max(1, panel_height)
+        if (
+            panel_width >= minimum_width
+            and panel_height <= maximum_height
+            and y_slice.stop <= maximum_bottom
+            and aspect_ratio >= 1.5
+        ):
+            panels[y_slice, x_slice] |= labels[y_slice, x_slice] == label_id
+    return panels
+
+
 def combine_masks(
     original: Image.Image,
     ai_mask: Image.Image,
@@ -270,6 +338,7 @@ def combine_masks(
     rgb = cv2.cvtColor(np.asarray(rgb_image), cv2.COLOR_RGB2BGR)
     rough = np.asarray(rough_image, dtype=np.uint8)
     recovered_small = np.asarray(recovered_image, dtype=np.uint8)
+    screen_panels = find_screen_panel_holes(rough)
     candidate = rough >= 12
     foreground_seed = cv2.erode(
         (recovered_small >= 180).astype(np.uint8),
@@ -283,6 +352,7 @@ def combine_masks(
     grabcut_mask[candidate] = cv2.GC_PR_FGD
     grabcut_mask[rough <= 2] = cv2.GC_BGD
     grabcut_mask[foreground_seed] = cv2.GC_FGD
+    grabcut_mask[screen_panels] = cv2.GC_FGD
     grabcut_mask[[0, -1], :] = cv2.GC_BGD
     grabcut_mask[:, [0, -1]] = cv2.GC_BGD
     try:
@@ -300,10 +370,26 @@ def combine_masks(
 
     keep = np.isin(grabcut_mask, (cv2.GC_FGD, cv2.GC_PR_FGD))
     keep_image = Image.fromarray((keep * 255).astype(np.uint8))
+    panel_image = Image.fromarray(
+        screen_panels.astype(np.uint8) * 255,
+    )
     if analysis_size != original.size:
         keep_image = keep_image.resize(original.size, Image.Resampling.NEAREST)
-    combined[~(np.asarray(keep_image) > 0)] = 0
-    return Image.fromarray(combined)
+        panel_image = panel_image.resize(
+            original.size,
+            Image.Resampling.NEAREST,
+        )
+    combined_image = Image.fromarray(combined)
+    panel_combined = Image.composite(
+        Image.new("L", original.size, 255),
+        combined_image,
+        panel_image,
+    )
+    return Image.composite(
+        panel_combined,
+        _empty_mask(original.size),
+        keep_image,
+    )
 
 
 def finish_cutout(
@@ -451,7 +537,12 @@ def smart_refine(
     original = original.convert("RGBA")
     current = current.convert("RGBA")
     if current.size != original.size:
-        current = current.resize(original.size, Image.Resampling.LANCZOS)
+        # Brush coordinates come from the image currently shown in the editor.
+        # The automatic cutout may be reduced to the processing-size limit, so
+        # resizing the edited result back to the upload's dimensions makes a
+        # stroke land at the wrong place.  Keep the editor/result dimensions as
+        # the working coordinate space and bring the source image to that size.
+        original = original.resize(current.size, Image.Resampling.LANCZOS)
 
     width, height = original.size
     parsed_points = []
@@ -768,12 +859,9 @@ def recover_all_elements(image: Image.Image) -> Image.Image:
                 coherent_global[y_slice, x_slice] |= region
 
     recovered = local_recovery | coherent_global
-    # Opening removes isolated mask splatter; closing reconnects antialiased
-    # strokes and narrow gaps without growing the recovered area.
-    recovered = ndimage.binary_opening(
-        recovered,
-        structure=np.ones((3, 3)),
-    )
+    # Do not open the mask here: at the Fast model's analysis resolution, a
+    # 3x3 opening deletes legitimate dots, dashed lines, and thin UI edges.
+    # Closing still reconnects antialiased strokes without erasing them.
     recovered = ndimage.binary_closing(
         recovered,
         structure=np.ones((3, 3)),
@@ -783,7 +871,19 @@ def recover_all_elements(image: Image.Image) -> Image.Image:
     if component_count:
         component_sizes = np.bincount(labels.ravel())
         minimum_size = max(12, round(width * height * 0.00003))
+        fine_detail_size = max(3, round(width * height * 0.000006))
         keep_component = component_sizes >= minimum_size
+        for label_id in range(1, component_count + 1):
+            component_size = component_sizes[label_id]
+            if component_size < fine_detail_size or keep_component[label_id]:
+                continue
+            component_residual = residual[labels == label_id]
+            # Preserve compact, high-contrast details while discarding weak
+            # smooth-background speckles that recovery can occasionally add.
+            if float(np.percentile(component_residual, 75)) >= (
+                residual_threshold * 1.35
+            ):
+                keep_component[label_id] = True
         keep_component[0] = False
         recovered = keep_component[labels]
 
@@ -809,7 +909,7 @@ def create_cutout(
     with Image.open(io.BytesIO(image_bytes)) as source:
         source.load()
         source = ImageOps.exif_transpose(source)
-        original = source.convert("RGBA")
+        original = limit_processing_size(source).convert("RGBA")
 
     # BEN2 and BiRefNet provide stronger masks than the previous ISNet default.
     # The legacy structure-recovery pass is retained only for Fast mode, where
@@ -918,6 +1018,70 @@ def refine_mask():
     refined.save(output, format="PNG", compress_level=4)
     output.seek(0)
     return send_file(output, mimetype="image/png", download_name="refined.png")
+
+
+@app.post("/feedback")
+def save_feedback():
+    """Store an explicitly approved Fast-mode alpha mask for later training."""
+    original_file = request.files.get("image")
+    current_file = request.files.get("current")
+    quality = request.form.get("quality", "").strip().lower()
+    if original_file is None or current_file is None:
+        return jsonify({"error": "The original image and final cutout are required."}), 400
+    if quality != "fast":
+        return jsonify({"error": "Feedback collection is available for Fast - ISNet only."}), 400
+
+    try:
+        with Image.open(original_file.stream) as original_source:
+            original_source.load()
+            original = limit_processing_size(
+                ImageOps.exif_transpose(original_source)
+            ).convert("RGB")
+        with Image.open(current_file.stream) as current_source:
+            current_source.load()
+            current = current_source.convert("RGBA")
+    except (UnidentifiedImageError, OSError):
+        return jsonify({"error": "The original image or final cutout is invalid."}), 400
+
+    if current.size != original.size:
+        current = current.resize(original.size, Image.Resampling.LANCZOS)
+
+    example_id = uuid.uuid4().hex
+    example_dir = os.path.join(FEEDBACK_DATA_DIR, example_id)
+    try:
+        os.makedirs(example_dir, exist_ok=False)
+        original.save(
+            os.path.join(example_dir, "original.png"),
+            format="PNG",
+            compress_level=4,
+        )
+        current.getchannel("A").save(
+            os.path.join(example_dir, "alpha.png"),
+            format="PNG",
+            compress_level=4,
+        )
+        metadata = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "original_filename": os.path.basename(original_file.filename),
+            "quality": quality,
+            "size": {"width": current.width, "height": current.height},
+        }
+        with open(
+            os.path.join(example_dir, "metadata.json"),
+            "w",
+            encoding="utf-8",
+        ) as metadata_file:
+            json.dump(metadata, metadata_file, indent=2)
+    except OSError:
+        app.logger.exception("Could not save Fast-mode feedback")
+        return jsonify({"error": "Could not save the local feedback example."}), 500
+
+    return jsonify(
+        {
+            "saved": True,
+            "examples": feedback_example_count(),
+        }
+    )
 
 
 @app.post("/export")

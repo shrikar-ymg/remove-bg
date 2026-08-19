@@ -19,4 +19,4 @@ htmlcov/
 *.onnx
 output/
 outputs/
-
+feedback_data/
