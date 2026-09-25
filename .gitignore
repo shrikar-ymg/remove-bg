@@ -20,3 +20,14 @@ htmlcov/
 output/
 outputs/
 feedback_data/
+
+# Editor, OS and tool folders
+.vscode/
+.idea/
+.claude/
+.vercel/
+.DS_Store
+Thumbs.db
+
+# Personal notes
+worklog.txt
