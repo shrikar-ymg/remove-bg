@@ -159,9 +159,11 @@ removals, and `GET /health` reports the connection state.
 ## Deploying to Modal
 
 `modal_app.py` runs the Flask app on [Modal](https://modal.com) (CPU, 4 cores,
-8 GB). The image is built once with the Auto-mode models baked in. A container
-starts on the first request (about a minute cold) and stops after two idle
-minutes, so nothing is used while nobody is using the app.
+12 GB). The image is built once with the Auto-mode models and the compiled
+matting kernels baked in. A container starts on the first request (about ten
+seconds cold) and stops after one idle minute, so nothing is used while nobody
+is using the app. Both Auto-mode models stay loaded between requests
+(`REMOVE_BG_KEEP_MODELS=1`).
 
 ```powershell
 pip install modal
@@ -217,3 +219,9 @@ quality field.
 For troubleshooting only, `REMOVE_BG_PROVIDER` can force `cuda`, `directml`,
 `rocm`, `coreml`, or `cpu`. Normal use should leave it unset so selection stays
 automatic.
+
+Automatic mode normally unloads each model right after use, so a small machine
+never holds two at once. On a server with plenty of memory, set
+`REMOVE_BG_KEEP_MODELS=1` to keep both loaded: on a 4-core CPU this measured
+15-23% faster per request with byte-identical output, at the price of
+11-20 GB of resident memory.

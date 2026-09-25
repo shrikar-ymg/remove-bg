@@ -51,6 +51,10 @@ image = (
         "tri[:12] = 0.0; tri[36:] = 1.0; "
         "alpha = estimate_alpha_cf(rgb, tri); estimate_foreground_ml(rgb, alpha)\"",
     )
+    # Keep both Auto-mode models loaded instead of reloading them for every
+    # request. Measured on this container: 15-23% faster, byte-identical output.
+    # Kept last so changing it does not rebuild the model layers above.
+    .env({"REMOVE_BG_KEEP_MODELS": "1"})
     .add_local_dir(
         ".",
         APP_DIR,
@@ -79,10 +83,14 @@ app = modal.App("cutout-studio", image=image)
 
 @app.function(
     cpu=4,
-    memory=8192,
+    # With both models kept loaded a request settles at 11-20 GB. Modal bills
+    # the higher of the request and actual use and does not cap memory unless
+    # asked, so ask for what is really needed and let the scheduler place it.
+    memory=12288,
     secrets=[modal.Secret.from_name("cutout-studio")],
-    # Keep the container warm briefly so a batch of images shares one start.
-    scaledown_window=120,
+    # Long enough for a batch of images to share one start, short because an
+    # idle container is the largest cost of a single visit.
+    scaledown_window=60,
     timeout=900,
 )
 # The app serialises model inference itself, so extra concurrency only lets the

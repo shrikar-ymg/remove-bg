@@ -149,13 +149,30 @@ function loadImage(url) {
   });
 }
 
-function canvasBlob(type = "image/png", quality) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Could not prepare the current cutout."));
-    }, type, quality);
-  });
+// WebKit (Safari on iPhone, iPad and Mac) creates the blob returned by toBlob()
+// lazily: uploading it straight away can send an empty body, which the server
+// rejects as an unreadable image, and the blob may also come back empty. Read
+// the bytes out and re-wrap them in an ordinary in-memory blob, retrying once or
+// twice and finally encoding through a data URL, so every caller gets a blob
+// that is guaranteed to have content.
+async function canvasBlob(type = "image/png", quality) {
+  const materialize = async (blob) => {
+    if (!blob || blob.size === 0) return null;
+    const bytes = await blob.arrayBuffer();
+    return bytes.byteLength > 0 ? new Blob([bytes], { type: blob.type || type }) : null;
+  };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const blob = await materialize(await new Promise((resolve) => canvas.toBlob(resolve, type, quality)));
+    if (blob) return blob;
+    await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+  }
+  try {
+    const blob = await materialize(await (await fetch(canvas.toDataURL(type, quality))).blob());
+    if (blob) return blob;
+  } catch {
+    // fall through to the error below
+  }
+  throw new Error("Could not prepare the current cutout.");
 }
 
 function replaceJobResult(job, blob) {

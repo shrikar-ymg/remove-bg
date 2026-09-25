@@ -123,6 +123,15 @@ BEN2_MODEL_URL = (
 BEN2_MODEL_HASH = (
     "sha256:22cea62108ff53b7ccc20f7a008bf30494228d84b1687f29ecbe76936a998101"
 )
+# Automatic selection normally unloads each model after use so a small machine
+# never holds two at once. A server with ample memory can set this to keep both
+# resident, which removes the model-loading time from every request.
+KEEP_MODELS_LOADED = os.environ.get("REMOVE_BG_KEEP_MODELS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 _sessions = {}
 _ben2_session = None
 _session_lock = threading.Lock()
@@ -2060,8 +2069,10 @@ def choose_automatic_mask(image: Image.Image) -> tuple:
             release_session(quality)
             continue
         scored.append((mask_edge_agreement(image, mask), quality, mask))
-        # Free this model before loading the next one.
-        release_session(quality)
+        # Free this model before loading the next one, unless the machine has
+        # room for both: reloading a model costs seconds on every request.
+        if not KEEP_MODELS_LOADED:
+            release_session(quality)
 
     if not scored:
         raise RuntimeError(
@@ -2284,7 +2295,9 @@ def refine_mask():
             current_source.load()
             current = current_source.convert("RGBA")
         refined = smart_refine(original, current, points, brush_size, mode)
-    except (json.JSONDecodeError, UnidentifiedImageError, OSError, TypeError, ValueError) as exc:
+    except UnidentifiedImageError:
+        return jsonify({"error": "That image could not be read. Please try again."}), 400
+    except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
         return jsonify({"error": str(exc) or "Invalid refinement request."}), 400
     except cv2.error as exc:
         app.logger.exception("Smart refinement failed")

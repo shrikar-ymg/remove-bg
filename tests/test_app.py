@@ -578,6 +578,34 @@ class AutomaticSelectionTests(unittest.TestCase):
         self.assertEqual(quality, "balanced")
         self.assertIsNone(graphic)
 
+    def test_candidates_are_unloaded_unless_the_models_are_kept(self):
+        image = self.edge_scene()
+        import app as app_module
+
+        masks = {
+            "best": self.mask_from_box((20, 15, 140, 115)),
+            "balanced": self.mask_from_box((60, 40, 180, 140)),
+        }
+        originals = (
+            app_module.predict_model_mask,
+            app_module.release_session,
+            app_module.KEEP_MODELS_LOADED,
+        )
+        app_module.predict_model_mask = lambda img, quality: masks[quality]
+        try:
+            for keep, expected in ((False, 2), (True, 0)):
+                released = []
+                app_module.KEEP_MODELS_LOADED = keep
+                app_module.release_session = released.append
+                choose_automatic_mask(image)
+                self.assertEqual(len(released), expected, f"keep={keep}")
+        finally:
+            (
+                app_module.predict_model_mask,
+                app_module.release_session,
+                app_module.KEEP_MODELS_LOADED,
+            ) = originals
+
     def test_a_near_tie_defers_to_the_preferred_model(self):
         image = self.edge_scene()
         import app as app_module
