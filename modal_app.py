@@ -34,6 +34,23 @@ image = (
         "fname='BEN2_Base.onnx', path=os.path.expanduser('~/.u2net'))\"",
         "python -c \"from rembg import new_session; new_session('birefnet-general-lite')\"",
     )
+    # PyMatting compiles its numeric kernels with Numba the first time it is
+    # imported, which took over a minute in every fresh container. Compile them
+    # once here and keep the cache in the image. "generic" makes the compiled
+    # code portable, so the cache is valid on whichever CPU Modal starts us on.
+    .env(
+        {
+            "NUMBA_CACHE_DIR": "/root/numba_cache",
+            "NUMBA_CPU_NAME": "generic",
+        }
+    )
+    .run_commands(
+        "python -c \"import numpy as np; "
+        "from pymatting import estimate_alpha_cf, estimate_foreground_ml; "
+        "rgb = np.random.rand(48, 48, 3); tri = np.full((48, 48), 0.5); "
+        "tri[:12] = 0.0; tri[36:] = 1.0; "
+        "alpha = estimate_alpha_cf(rgb, tri); estimate_foreground_ml(rgb, alpha)\"",
+    )
     .add_local_dir(
         ".",
         APP_DIR,
