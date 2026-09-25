@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+tests/
+feedback_data/
+worklog.txt
+.vscode/
+.claude/

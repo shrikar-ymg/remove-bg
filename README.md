@@ -1,3 +1,13 @@
+---
+title: Cutout Studio
+emoji: ✂️
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Cutout Studio 2.2
 
 A private, local background-removal workspace for high-quality automatic
@@ -155,6 +165,25 @@ as before.
 Data lands in the `removals` collection of the `cutout_studio` database
 (`MONGODB_DB` to change it). `GET /api/history?limit=20` returns the latest
 removals, and `GET /health` reports the connection state.
+
+## Deploying to Hugging Face Spaces
+
+The repo ships a `Dockerfile` for a free Docker Space (CPU, 16 GB RAM). The
+block at the top of this file is the Space's configuration. The models used by
+Auto mode are downloaded while the image builds.
+
+Set these in the Space under **Settings → Variables and secrets**:
+
+| Secret | Purpose |
+|---|---|
+| `MONGODB_URI` | Atlas connection string, with `<db_password>` left in place |
+| `MONGODB_PASSWORD` | The database user's password |
+| `HISTORY_TOKEN` | Required to read `/api/history`, which lists visitors' filenames |
+
+In Atlas, allow access from `0.0.0.0/0` under **Network Access**, because the
+Space's IP address is not fixed. Open the app at its direct
+`https://<user>-<space>.hf.space` address; the app's `X-Frame-Options: DENY`
+header keeps it from rendering inside the huggingface.co page frame.
 
 ## Development
 

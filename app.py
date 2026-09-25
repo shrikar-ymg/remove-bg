@@ -2,6 +2,7 @@
 
 import base64
 import gc
+import hmac
 import io
 import json
 import os
@@ -2448,7 +2449,18 @@ def export_cutout():
 
 @app.get("/api/history")
 def api_history():
-    """List the most recent removals recorded in MongoDB."""
+    """List the most recent removals recorded in MongoDB.
+
+    On a public deployment set HISTORY_TOKEN: the records include visitors'
+    filenames, so they must not be readable by everyone. Locally it is unset.
+    """
+    token = os.environ.get("HISTORY_TOKEN", "")
+    if token:
+        supplied = request.headers.get("X-History-Token") or request.args.get(
+            "token", ""
+        )
+        if not hmac.compare_digest(supplied.encode(), token.encode()):
+            return jsonify({"error": "A valid history token is required."}), 401
     if not db.configured():
         return jsonify({"error": "MongoDB is not configured."}), 503
     try:

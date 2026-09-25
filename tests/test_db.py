@@ -195,6 +195,19 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual([row["filename"] for row in rows], ["second.png"])
         self.assertNotIn("_id", rows[0])
 
+    def test_history_token_protects_a_public_deployment(self):
+        self.env(MONGODB_URI=URI, MONGODB_PASSWORD="pw", HISTORY_TOKEN="s3cret")
+        client = app.test_client()
+        self.assertEqual(client.get("/api/history").status_code, 401)
+        self.assertEqual(client.get("/api/history?token=wrong").status_code, 401)
+        self.assertEqual(client.get("/api/history?token=s3cret").status_code, 200)
+        self.assertEqual(
+            client.get(
+                "/api/history", headers={"X-History-Token": "s3cret"}
+            ).status_code,
+            200,
+        )
+
     def test_history_rejects_a_bad_limit(self):
         self.env(MONGODB_URI=URI, MONGODB_PASSWORD="pw")
         self.assertEqual(

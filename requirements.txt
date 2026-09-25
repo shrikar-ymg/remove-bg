@@ -10,3 +10,4 @@ opencv-python-headless>=4.12
 pymatting>=1.1
 pymongo>=4.7
 python-dotenv>=1.0
+gunicorn>=22.0; sys_platform != "win32"
