@@ -71,7 +71,8 @@ app = modal.App("cutout-studio", image=image)
 # The app serialises model inference itself, so extra concurrency only lets the
 # interface and small requests stay responsive while an image is processing.
 @modal.concurrent(max_inputs=2)
-@modal.wsgi_app()
+# The public URL is https://<workspace>--<label>.modal.run
+@modal.wsgi_app(label="cut-out-studio")
 def web():
     from app import app as flask_app
 
