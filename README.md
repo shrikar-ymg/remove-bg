@@ -1,13 +1,3 @@
----
-title: Cutout Studio
-emoji: ✂️
-colorFrom: indigo
-colorTo: purple
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Cutout Studio 2.2
 
 A private, local background-removal workspace for high-quality automatic
@@ -166,24 +156,33 @@ Data lands in the `removals` collection of the `cutout_studio` database
 (`MONGODB_DB` to change it). `GET /api/history?limit=20` returns the latest
 removals, and `GET /health` reports the connection state.
 
-## Deploying to Hugging Face Spaces
+## Deploying to Modal
 
-The repo ships a `Dockerfile` for a free Docker Space (CPU, 16 GB RAM). The
-block at the top of this file is the Space's configuration. The models used by
-Auto mode are downloaded while the image builds.
+`modal_app.py` runs the Flask app on [Modal](https://modal.com) (CPU, 4 cores,
+8 GB). The image is built once with the Auto-mode models baked in. A container
+starts on the first request (about a minute cold) and stops after two idle
+minutes, so nothing is used while nobody is using the app.
 
-Set these in the Space under **Settings → Variables and secrets**:
+```powershell
+pip install modal
+modal setup
+modal secret create cutout-studio MONGODB_URI=... MONGODB_PASSWORD=... `
+    MONGODB_DB=cutout_studio HISTORY_TOKEN=...
+modal deploy modal_app.py
+```
 
 | Secret | Purpose |
 |---|---|
 | `MONGODB_URI` | Atlas connection string, with `<db_password>` left in place |
 | `MONGODB_PASSWORD` | The database user's password |
+| `MONGODB_DB` | Database name |
 | `HISTORY_TOKEN` | Required to read `/api/history`, which lists visitors' filenames |
 
-In Atlas, allow access from `0.0.0.0/0` under **Network Access**, because the
-Space's IP address is not fixed. Open the app at its direct
-`https://<user>-<space>.hf.space` address; the app's `X-Frame-Options: DENY`
-header keeps it from rendering inside the huggingface.co page frame.
+Send the token as an `X-History-Token` header or a `?token=` parameter. In
+Atlas, allow `0.0.0.0/0` under **Network Access**, because Modal's IP addresses
+are not fixed; until then the app still works but records nothing.
+
+A `Dockerfile` is also included for hosting on any other Docker platform.
 
 ## Development
 
